@@ -2,33 +2,31 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "lldb",
+            "name": "Python: Debug Extension",
+            "type": "python",
             "request": "launch",
-            "name": "Debug",
-            "preLaunchTask": "zig-test-bin",
-            "program": "${workspaceFolder}/zig-out/bin/test.bin",
-            "args": [],
-            "cwd": "${workspaceFolder}/",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYDUST_DEBUG": "1"
+            }
         },
         {
-            "type": "lldb",
+            "name": "Python: Debug Tests",
+            "type": "python",
             "request": "launch",
-            "name": "Debug Example",
-            "initCommands": [
-                "shell poetry run pydust debug ${file}"
-            ],
-            "program": "zig-out/bin/debug.bin",
+            "module": "pytest",
+            "args": ["-v", "-s", "${file}"],
+            "console": "integratedTerminal",
+            "justMyCode": false
         },
         {
+            "name": "LLDB: Attach to Python",
             "type": "lldb",
-            "request": "launch",
-            "name": "LLDB Python",
-            "program": "${command:python.interpreterPath}",
-            "args": [
-                "-m",
-                "pytest",
-            ],
-            "cwd": "${workspaceFolder}"
-        },
+            "request": "attach",
+            "pid": "${command:pickProcess}"
+        }
     ]
 }

@@ -67,11 +67,20 @@ pub const as = conversions.as;
 pub const unchecked = conversions.unchecked;
 pub const PyBool = types.PyBool;
 pub const PyBuffer = types.PyBuffer;
+pub const PyByteArray = types.PyByteArray;
 pub const PyBytes = types.PyBytes;
 pub const PyCode = types.PyCode;
+pub const PyComplex = types.PyComplex;
+pub const PyCoroutine = types.PyCoroutine;
+pub const PyAwaitable = types.PyAwaitable;
+pub const PyDate = types.PyDate;
+pub const PyDateTime = types.PyDateTime;
+pub const PyDecimal = types.PyDecimal;
 pub const PyDict = types.PyDict;
 pub const PyFloat = types.PyFloat;
 pub const PyFrame = types.PyFrame;
+pub const PyFrozenSet = types.PyFrozenSet;
+pub const PyGenerator = types.PyGenerator;
 pub const PyGIL = types.PyGIL;
 pub const PyIter = types.PyIter;
 pub const PyList = types.PyList;
@@ -79,10 +88,16 @@ pub const PyLong = types.PyLong;
 pub const PyMemoryView = types.PyMemoryView;
 pub const PyModule = types.PyModule;
 pub const PyObject = types.PyObject;
+pub const PyPath = types.PyPath;
+pub const PyRange = types.PyRange;
+pub const PySet = types.PySet;
 pub const PySlice = types.PySlice;
 pub const PyString = types.PyString;
+pub const PyTime = types.PyTime;
+pub const PyTimeDelta = types.PyTimeDelta;
 pub const PyTuple = types.PyTuple;
 pub const PyType = types.PyType;
+pub const PyUUID = types.PyUUID;
 const err = @import("types/error.zig");
 pub const ArithmeticError = err.ArithmeticError;
 pub const AssertionError = err.AssertionError;
@@ -156,6 +171,12 @@ pub const ZeroDivisionError = err.ZeroDivisionError;
 pub const ffi = @import("ffi");
 pub const PyError = @import("errors.zig").PyError;
 pub const allocator: std.mem.Allocator = mem.PyMemAllocator.allocator();
+
+// Testing utilities
+pub const testing = @import("testing.zig");
+
+// Debugging utilities
+pub const debug = @import("debug.zig");
 
 const Self = @This();
 

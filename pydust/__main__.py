@@ -16,7 +16,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from pydust import buildzig, config
+from pydust import buildzig, config, watch
 
 parser = argparse.ArgumentParser()
 sub = parser.add_subparsers(dest="command", required=True)
@@ -49,6 +49,35 @@ build_sp.add_argument(
     help="space separated list of extension '<path>' or '<name>=<path>' entries",
 )
 
+watch_sp = sub.add_parser(
+    "watch",
+    help="Watch Zig files and rebuild on changes",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
+watch_sp.add_argument(
+    "-o",
+    "--optimize",
+    default="Debug",
+    choices=["Debug", "ReleaseSafe", "ReleaseFast", "ReleaseSmall"],
+    help="optimization level",
+)
+watch_sp.add_argument(
+    "-t",
+    "--test",
+    action="store_true",
+    help="run tests after rebuild",
+)
+watch_sp.add_argument(
+    "--pytest",
+    action="store_true",
+    help="run pytest instead of zig test",
+)
+watch_sp.add_argument(
+    "pytest_args",
+    nargs="*",
+    help="additional arguments to pass to pytest (only with --pytest)",
+)
+
 
 def main():
     args = parser.parse_args()
@@ -58,6 +87,9 @@ def main():
 
     elif args.command == "build":
         build(args)
+
+    elif args.command == "watch":
+        watch_mode(args)
 
 
 def _parse_exts(exts: list[str], limited_api: bool = True, prefix: str = "") -> list[config.ExtModule]:
@@ -108,6 +140,14 @@ def debug(args):
     """Given an entrypoint file, compile it for test debugging. Placing it in a well-known location."""
     entrypoint = args.entrypoint
     buildzig.zig_build(["install", f"-Ddebug-root={entrypoint}"])
+
+
+def watch_mode(args):
+    """Watch Zig files and rebuild on changes."""
+    if args.pytest:
+        watch.watch_pytest(optimize=args.optimize, pytest_args=args.pytest_args or [])
+    else:
+        watch.watch_and_rebuild(optimize=args.optimize, test_mode=args.test)
 
 
 if __name__ == "__main__":

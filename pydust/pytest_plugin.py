@@ -27,6 +27,12 @@ from pydust import buildzig, config
 pydust_conf = config.load()
 
 
+class MemoryLeakError(Exception):
+    """Raised when memory leaks are detected in Zig tests."""
+
+    pass
+
+
 def pytest_addoption(parser, pluginmanager):
     """Register Pytest command line options."""
     group = parser.getgroup("ziggy pydust")
@@ -185,9 +191,19 @@ class ZigItem(pytest.Item):
             self.add_marker(pytest.mark.skip)
 
         if leak:
-            self.add_report_section("call", "memory leaks", f"Zig detected a memory leak in '{self.nodeid}'")
+            leak_msg = (
+                f"\n{'='*70}\n"
+                f"MEMORY LEAK DETECTED in '{self.nodeid}'\n"
+                f"{'='*70}\n"
+                f"The test allocator detected unreleased memory.\n"
+                f"Please ensure all allocations are properly freed.\n"
+                f"{'='*70}\n"
+            )
+            self.add_report_section("call", "memory leaks", leak_msg)
 
         if fail or leak:
+            if leak:
+                raise MemoryLeakError(f"Memory leak detected in Zig test '{self.nodeid}'")
             raise Exception("Failure in Zig test")
 
     def repr_failure(self, excinfo):
