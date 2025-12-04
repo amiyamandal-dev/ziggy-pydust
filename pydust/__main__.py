@@ -16,7 +16,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from pydust import buildzig, config, watch
+from pydust import buildzig, config, develop, init, watch
+from pydust import wheel as wheel_module
 
 parser = argparse.ArgumentParser()
 sub = parser.add_subparsers(dest="command", required=True)
@@ -78,6 +79,113 @@ watch_sp.add_argument(
     help="additional arguments to pass to pytest (only with --pytest)",
 )
 
+# Maturin-like commands
+init_sp = sub.add_parser(
+    "init",
+    help="Initialize a new Pydust project in the current directory",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
+init_sp.add_argument(
+    "-n",
+    "--name",
+    help="package name (defaults to directory name)",
+)
+init_sp.add_argument(
+    "-a",
+    "--author",
+    help="author name (defaults to git config)",
+)
+init_sp.add_argument(
+    "-f",
+    "--force",
+    action="store_true",
+    help="overwrite existing files",
+)
+
+new_sp = sub.add_parser(
+    "new",
+    help="Create a new Pydust project directory",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
+new_sp.add_argument(
+    "name",
+    help="name of the project",
+)
+new_sp.add_argument(
+    "-p",
+    "--path",
+    type=Path,
+    help="parent directory (defaults to current directory)",
+)
+
+develop_sp = sub.add_parser(
+    "develop",
+    help="Build and install the project in development mode (like pip install -e .)",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
+develop_sp.add_argument(
+    "-o",
+    "--optimize",
+    default="Debug",
+    choices=["Debug", "ReleaseSafe", "ReleaseFast", "ReleaseSmall"],
+    help="optimization level",
+)
+develop_sp.add_argument(
+    "-v",
+    "--verbose",
+    action="store_true",
+    help="verbose output",
+)
+develop_sp.add_argument(
+    "-e",
+    "--extras",
+    nargs="+",
+    help="optional extras to install (e.g., dev, test)",
+)
+develop_sp.add_argument(
+    "--build-only",
+    action="store_true",
+    help="only build extension modules without installing",
+)
+
+build_wheel_sp = sub.add_parser(
+    "build-wheel",
+    help="Build Python wheels for distribution (alias for python -m pydust.wheel)",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
+build_wheel_sp.add_argument(
+    "--platform",
+    choices=[p.value for p in wheel_module.Platform],
+    help="target platform (default: current platform)",
+)
+build_wheel_sp.add_argument(
+    "--all-platforms",
+    action="store_true",
+    help="build for all supported platforms",
+)
+build_wheel_sp.add_argument(
+    "--optimize",
+    choices=["Debug", "ReleaseSafe", "ReleaseFast", "ReleaseSmall"],
+    default="ReleaseFast",
+    help="optimization level",
+)
+build_wheel_sp.add_argument(
+    "--output-dir",
+    default="dist",
+    help="output directory",
+)
+build_wheel_sp.add_argument(
+    "--no-clean",
+    action="store_true",
+    help="don't clean before building",
+)
+build_wheel_sp.add_argument(
+    "-v",
+    "--verbose",
+    action="store_true",
+    help="verbose output",
+)
+
 
 def main():
     args = parser.parse_args()
@@ -90,6 +198,18 @@ def main():
 
     elif args.command == "watch":
         watch_mode(args)
+
+    elif args.command == "init":
+        init_project(args)
+
+    elif args.command == "new":
+        new_project(args)
+
+    elif args.command == "develop":
+        develop_mode(args)
+
+    elif args.command == "build-wheel":
+        build_wheel(args)
 
 
 def _parse_exts(exts: list[str], limited_api: bool = True, prefix: str = "") -> list[config.ExtModule]:
@@ -148,6 +268,63 @@ def watch_mode(args):
         watch.watch_pytest(optimize=args.optimize, pytest_args=args.pytest_args or [])
     else:
         watch.watch_and_rebuild(optimize=args.optimize, test_mode=args.test)
+
+
+def init_project(args):
+    """Initialize a new Pydust project in the current directory."""
+    init.init_project(
+        path=Path.cwd(),
+        package_name=args.name,
+        author=args.author,
+        force=args.force,
+    )
+
+
+def new_project(args):
+    """Create a new Pydust project directory."""
+    init.new_project(
+        name=args.name,
+        path=args.path,
+    )
+
+
+def develop_mode(args):
+    """Build and install the project in development mode."""
+    if args.build_only:
+        develop.develop_build_only(
+            optimize=args.optimize,
+            verbose=args.verbose,
+        )
+    else:
+        develop.develop_install(
+            optimize=args.optimize,
+            verbose=args.verbose,
+            extras=args.extras,
+        )
+
+
+def build_wheel(args):
+    """Build Python wheels for distribution."""
+    builder = wheel_module.WheelBuilder()
+
+    if args.all_platforms:
+        print("Building wheels for all platforms...")
+        wheels = builder.build_all_platforms(
+            clean=not args.no_clean,
+            verbose=args.verbose,
+        )
+        print(f"\n✓ Built {len(wheels)} wheels:")
+        for wheel in wheels:
+            print(f"  - {wheel.name}")
+    else:
+        wheel_path = wheel_module.build_wheel(
+            platform=args.platform,
+            optimize=args.optimize,
+            output_dir=args.output_dir,
+            clean=not args.no_clean,
+            verbose=args.verbose,
+        )
+        print(f"\n✓ Wheel built: {wheel_path}")
 
 
 if __name__ == "__main__":

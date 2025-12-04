@@ -74,10 +74,90 @@ Please reach out if you're interested in helping us to expand compatibility.
 
 ## Getting Started
 
+### Quick Start with CLI (Maturin-style)
+
+Pydust now includes a CLI similar to Maturin for easy project setup and development:
+
+```bash
+# Install pydust
+pip install ziggy-pydust
+
+# Create a new project
+pydust new my_extension
+cd my_extension
+
+# Build and install in development mode
+pydust develop
+
+# Run tests
+pytest
+
+# Build wheels for distribution
+pydust build-wheel --all-platforms
+```
+
+### CLI Commands
+
+- **`pydust new <name>`** - Create a new project with boilerplate
+- **`pydust init`** - Initialize pydust in an existing directory
+- **`pydust develop`** - Build and install in development mode (like `pip install -e .`)
+- **`pydust build-wheel`** - Build distribution wheels
+- **`pydust watch`** - Watch for changes and rebuild automatically
+
+### Using the Template
+
 Pydust docs can be found [here](https://pydust.fulcrum.so).
 Zig documentation (beta) can be found [here](https://pydust.fulcrum.so/latest/zig).
 
 There is also a [template repository](https://github.com/fulcrum-so/ziggy-pydust-template) including Poetry build, Pytest and publishing from Github Actions.
+
+## Distribution & Cross-Compilation
+
+Pydust includes built-in support for building and distributing wheels for multiple platforms:
+
+### Build Wheels
+
+```bash
+# Build for current platform
+python -m pydust.wheel
+
+# Build for all platforms (Linux, macOS, Windows)
+python -m pydust.wheel --all-platforms
+
+# Build for specific platform
+python -m pydust.wheel --platform linux-x86_64
+```
+
+### Supported Platforms
+
+- **Linux**: x86_64, aarch64 (manylinux_2_17 compatible)
+- **macOS**: x86_64 (10.9+), arm64 (11.0+)
+- **Windows**: x64
+
+### Automated Builds with GitHub Actions
+
+The included GitHub Actions workflow automatically builds wheels for all platforms when you push a tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+This will:
+- Build wheels for all platforms and Python versions (3.9-3.13)
+- Test each wheel
+- Publish to PyPI (if configured)
+- Create a GitHub release
+
+### Quick Start
+
+1. **Build a wheel**: `python -m pydust.wheel`
+2. **Test it**: `pip install dist/*.whl`
+3. **Publish**: `twine upload dist/*`
+
+For detailed instructions, see:
+- [Quick Start Guide](docs/DISTRIBUTION_QUICKSTART.md)
+- [Full Distribution Guide](docs/distribution.md)
 
 ## Contributing
 

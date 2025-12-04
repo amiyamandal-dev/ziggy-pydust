@@ -56,51 +56,51 @@ pub const PyCoroutine = extern struct {
 };
 
 /// Python awaitable object
-pub const PyAwaitable = extern struct {
-    obj: py.PyObject,
+pub fn PyAwaitable(comptime root: type) type {
+    return extern struct {
+        obj: py.PyObject,
 
-    const Self = @This();
+        const Self = @This();
 
-    /// Get the iterator for this awaitable (for await protocol)
-    pub fn iter(self: Self) !py.PyIter {
-        const result = ffi.PyObject_GetIter(self.obj.py) orelse return PyError.PyRaised;
-        return py.PyIter{ .obj = py.PyObject{ .py = result } };
-    }
+        /// Get the iterator for this awaitable (for await protocol)
+        pub fn iter(self: Self) !py.PyIter(root) {
+            const result = ffi.PyObject_GetIter(self.obj.py) orelse return PyError.PyRaised;
+            return py.PyIter(root){ .obj = py.PyObject{ .py = result } };
+        }
 
-    /// Await this awaitable (blocking)
-    /// Warning: This blocks the current thread until the coroutine completes
-    pub fn await_(self: Self) !py.PyObject {
-        const it = try self.iter();
-        while (true) {
-            const item = it.next() catch |err| {
-                if (err == PyError.PyRaised) {
-                    // Check if StopIteration was raised (normal completion)
-                    if (ffi.PyErr_ExceptionMatches(ffi.PyExc_StopIteration()) != 0) {
-                        // Get the StopIteration value
-                        var ptype: ?*ffi.PyObject = null;
-                        var pvalue: ?*ffi.PyObject = null;
-                        var ptraceback: ?*ffi.PyObject = null;
-                        ffi.PyErr_Fetch(&ptype, &pvalue, &ptraceback);
+        /// Await this awaitable (blocking)
+        /// Warning: This blocks the current thread until the coroutine completes
+        pub fn await_(self: Self) !py.PyObject {
+            const it = try self.iter();
+            while (true) {
+                const item = it.next(py.PyObject) catch |err| {
+                    if (err == PyError.PyRaised) {
+                        // Check if StopIteration was raised (normal completion)
+                        if (ffi.PyErr_ExceptionMatches(ffi.PyExc_StopIteration) != 0) {
+                            // Get the StopIteration value
+                            var ptype: ?*ffi.PyObject = null;
+                            var pvalue: ?*ffi.PyObject = null;
+                            var ptraceback: ?*ffi.PyObject = null;
+                            ffi.PyErr_Fetch(&ptype, &pvalue, &ptraceback);
 
-                        if (pvalue) |value| {
-                            const exc = py.PyObject{ .py = value };
-                            const result = exc.getAttribute("value") catch {
-                                // No value attribute, return None
-                                const none = py.PyObject{ .py = ffi.Py_None() };
-                                none.incref();
-                                return none;
-                            };
-                            return result;
+                            if (pvalue) |value| {
+                                const exc = py.PyObject{ .py = value };
+                                const result = exc.getAttribute("value") catch {
+                                    // No value attribute, return None
+                                    return py.None();
+                                };
+                                return result;
+                            }
                         }
                     }
-                }
-                return err;
-            };
-            _ = item;
-            // Continue iterating until StopIteration
+                    return err;
+                };
+                if (item) |obj| obj.decref();
+                // Continue iterating until StopIteration
+            }
         }
-    }
-};
+    };
+}
 
 /// Helper to create an async function wrapper
 /// This allows Zig functions to be called as Python coroutines

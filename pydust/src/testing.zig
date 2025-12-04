@@ -22,14 +22,14 @@ pub const TestAllocator = struct {
         .thread_safe = true,
         .verbose_log = false,
     }),
-    leak_count: usize,
+    has_leaked: bool,
 
     const Self = @This();
 
     pub fn init() Self {
         return .{
             .gpa = .{},
-            .leak_count = 0,
+            .has_leaked = false,
         };
     }
 
@@ -41,7 +41,7 @@ pub const TestAllocator = struct {
     pub fn deinit(self: *Self) bool {
         const leaked = self.gpa.deinit();
         if (leaked == .leak) {
-            self.leak_count = self.gpa.total_requested_bytes;
+            self.has_leaked = true;
             return true;
         }
         return false;
@@ -50,8 +50,8 @@ pub const TestAllocator = struct {
     /// Get detailed leak information
     pub fn getLeakInfo(self: *const Self) LeakInfo {
         return .{
-            .has_leak = self.leak_count > 0,
-            .bytes_leaked = self.leak_count,
+            .has_leak = self.has_leaked,
+            .bytes_leaked = 0, // GPA in Zig 0.15+ doesn't expose this information
         };
     }
 };

@@ -14,8 +14,11 @@ const builtin = @import("builtin");
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
+    // Support cross-compilation via ZIG_TARGET environment variable
+    const target = getTargetFromEnv(b) orelse b.standardTargetOptions(.{});
+
+    // Support optimization level via PYDUST_OPTIMIZE environment variable
+    const optimize = getOptimizeFromEnv(b) orelse b.standardOptimizeOption(.{});
 
     const python_exe = b.option([]const u8, "python-exe", "Python executable to use") orelse "python";
 
@@ -141,3 +144,34 @@ fn getPythonLDVersion(python_exe: []const u8, allocator: std.mem.Allocator) ![]c
 }
 
 const runProcess = if (builtin.zig_version.minor >= 12) std.process.Child.run else std.process.Child.exec;
+
+/// Get target from ZIG_TARGET environment variable if set
+fn getTargetFromEnv(b: *std.Build) ?std.Build.ResolvedTarget {
+    const zig_target_str = std.process.getEnvVarOwned(b.allocator, "ZIG_TARGET") catch return null;
+    defer b.allocator.free(zig_target_str);
+
+    if (zig_target_str.len == 0) return null;
+
+    const query = std.Target.Query.parse(.{ .arch_os_abi = zig_target_str }) catch |err| {
+        std.debug.print("Warning: Invalid ZIG_TARGET '{s}': {}\n", .{ zig_target_str, err });
+        return null;
+    };
+
+    return b.resolveTargetQuery(query);
+}
+
+/// Get optimization mode from PYDUST_OPTIMIZE environment variable if set
+fn getOptimizeFromEnv(b: *std.Build) ?std.builtin.OptimizeMode {
+    const optimize_str = std.process.getEnvVarOwned(b.allocator, "PYDUST_OPTIMIZE") catch return null;
+    defer b.allocator.free(optimize_str);
+
+    if (optimize_str.len == 0) return null;
+
+    if (std.mem.eql(u8, optimize_str, "Debug")) return .Debug;
+    if (std.mem.eql(u8, optimize_str, "ReleaseSafe")) return .ReleaseSafe;
+    if (std.mem.eql(u8, optimize_str, "ReleaseFast")) return .ReleaseFast;
+    if (std.mem.eql(u8, optimize_str, "ReleaseSmall")) return .ReleaseSmall;
+
+    std.debug.print("Warning: Invalid PYDUST_OPTIMIZE '{s}', using default\n", .{optimize_str});
+    return null;
+}
