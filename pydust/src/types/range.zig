@@ -22,14 +22,14 @@ pub const PyRange = extern struct {
     const Self = @This();
 
     /// Create a range with stop value: range(stop)
-    pub fn new(stop: i64) !Self {
+    pub fn new(stop_value: i64) !Self {
         const builtins = try py.import("builtins");
         defer builtins.decref();
 
         const range_type = try builtins.getAttribute("range");
         defer range_type.decref();
 
-        const stop_obj = try py.PyLong.from(stop);
+        const stop_obj = try py.PyLong.from(stop_value);
         defer stop_obj.obj.decref();
 
         const range_obj = try py.call(@import("../pydust.zig"), range_type, .{stop_obj.obj});
@@ -37,17 +37,17 @@ pub const PyRange = extern struct {
     }
 
     /// Create a range with start and stop: range(start, stop)
-    pub fn fromStartStop(start: i64, stop: i64) !Self {
+    pub fn fromStartStop(start_value: i64, stop_value: i64) !Self {
         const builtins = try py.import("builtins");
         defer builtins.decref();
 
         const range_type = try builtins.getAttribute("range");
         defer range_type.decref();
 
-        const start_obj = try py.PyLong.from(start);
+        const start_obj = try py.PyLong.from(start_value);
         defer start_obj.obj.decref();
 
-        const stop_obj = try py.PyLong.from(stop);
+        const stop_obj = try py.PyLong.from(stop_value);
         defer stop_obj.obj.decref();
 
         const range_obj = try py.call(@import("../pydust.zig"), range_type, .{ start_obj.obj, stop_obj.obj });
@@ -55,8 +55,8 @@ pub const PyRange = extern struct {
     }
 
     /// Create a range with start, stop, and step: range(start, stop, step)
-    pub fn fromStartStopStep(start: i64, stop: i64, step: i64) !Self {
-        if (step == 0) {
+    pub fn fromStartStopStep(start_value: i64, stop_value: i64, step_value: i64) !Self {
+        if (step_value == 0) {
             return py.ValueError(@import("../pydust.zig")).raise("range() arg 3 must not be zero");
         }
 
@@ -66,13 +66,13 @@ pub const PyRange = extern struct {
         const range_type = try builtins.getAttribute("range");
         defer range_type.decref();
 
-        const start_obj = try py.PyLong.from(start);
+        const start_obj = try py.PyLong.from(start_value);
         defer start_obj.obj.decref();
 
-        const stop_obj = try py.PyLong.from(stop);
+        const stop_obj = try py.PyLong.from(stop_value);
         defer stop_obj.obj.decref();
 
-        const step_obj = try py.PyLong.from(step);
+        const step_obj = try py.PyLong.from(step_value);
         defer step_obj.obj.decref();
 
         const range_obj = try py.call(@import("../pydust.zig"), range_type, .{ start_obj.obj, stop_obj.obj, step_obj.obj });
@@ -156,7 +156,7 @@ pub const PyRange = extern struct {
     }
 
     /// Convert range to a list
-    pub fn toList(comptime root: type) !py.PyList(root) {
+    pub fn toList(self: Self, comptime root: type) !py.PyList(root) {
         const list_type = try py.import("builtins").getAttribute("list");
         defer list_type.decref();
 

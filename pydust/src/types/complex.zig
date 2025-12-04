@@ -22,8 +22,8 @@ pub const PyComplex = extern struct {
     const Self = @This();
 
     /// Create a complex number from real and imaginary parts
-    pub fn create(real: f64, imag: f64) !Self {
-        const complex_obj = ffi.PyComplex_FromDoubles(real, imag) orelse return PyError.PyRaised;
+    pub fn create(real_part: f64, imag_part: f64) !Self {
+        const complex_obj = ffi.PyComplex_FromDoubles(real_part, imag_part) orelse return PyError.PyRaised;
         return .{ .obj = .{ .py = complex_obj } };
     }
 
@@ -87,9 +87,9 @@ pub const PyComplex = extern struct {
     pub fn mul(self: Self, other: Self) !Self {
         const a = try self.asTuple();
         const b = try other.asTuple();
-        const real = a.real * b.real - a.imag * b.imag;
-        const imag = a.real * b.imag + a.imag * b.real;
-        return try Self.create(real, imag);
+        const real_part = a.real * b.real - a.imag * b.imag;
+        const imag_part = a.real * b.imag + a.imag * b.real;
+        return try Self.create(real_part, imag_part);
     }
 
     /// Divide two complex numbers
@@ -102,9 +102,9 @@ pub const PyComplex = extern struct {
             return py.ZeroDivisionError(@import("../pydust.zig")).raise("complex division by zero");
         }
 
-        const real = (a.real * b.real + a.imag * b.imag) / denominator;
-        const imag = (a.imag * b.real - a.real * b.imag) / denominator;
-        return try Self.create(real, imag);
+        const real_part = (a.real * b.real + a.imag * b.imag) / denominator;
+        const imag_part = (a.imag * b.real - a.real * b.imag) / denominator;
+        return try Self.create(real_part, imag_part);
     }
 
     /// Get the absolute value (magnitude) of the complex number
@@ -127,9 +127,9 @@ pub const PyComplex = extern struct {
 
     /// Create from polar coordinates (r * e^(i*phi))
     pub fn fromPolar(r: f64, phi: f64) !Self {
-        const real = r * @cos(phi);
-        const imag = r * @sin(phi);
-        return try Self.create(real, imag);
+        const real_part = r * @cos(phi);
+        const imag_part = r * @sin(phi);
+        return try Self.create(real_part, imag_part);
     }
 
     /// Convert to polar coordinates

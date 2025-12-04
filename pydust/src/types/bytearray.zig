@@ -136,28 +136,28 @@ pub const PyByteArray = extern struct {
     /// Remove and return an item at index (default last)
     pub fn pop(self: Self, index: ?isize) !u8 {
         const slice = try self.asSlice();
-        const len = slice.len;
+        const length = slice.len;
 
-        if (len == 0) {
+        if (length == 0) {
             return py.IndexError(@import("../pydust.zig")).raise("pop from empty bytearray");
         }
 
         const idx = if (index) |i| blk: {
-            const normalized = if (i < 0) @as(usize, @intCast(len + i)) else @as(usize, @intCast(i));
-            if (normalized >= len) {
+            const normalized = if (i < 0) @as(usize, @intCast(@as(isize, @intCast(length)) + i)) else @as(usize, @intCast(i));
+            if (normalized >= length) {
                 return py.IndexError(@import("../pydust.zig")).raise("pop index out of range");
             }
             break :blk normalized;
-        } else len - 1;
+        } else length - 1;
 
         const value = slice[idx];
 
         // Shift elements after idx
-        if (idx < len - 1) {
+        if (idx < length - 1) {
             std.mem.copyForwards(u8, slice[idx..], slice[idx + 1 ..]);
         }
 
-        try self.resize(len - 1);
+        try self.resize(length - 1);
         return value;
     }
 

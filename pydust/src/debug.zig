@@ -157,7 +157,7 @@ pub fn printStackTrace() void {
 
     // Zig stack trace
     std.debug.print("\n--- Zig Stack ---\n", .{});
-    const debug_info = std.debug.getSelfDebugInfo() catch |e| {
+    _ = std.debug.getSelfDebugInfo() catch |e| {
         std.debug.print("Failed to get Zig debug info: {}\n", .{e});
         return;
     };
@@ -253,19 +253,19 @@ pub fn inspectRefCount(obj: py.PyObject) void {
 
 /// Timing helper for performance debugging
 pub const Timer = struct {
-    start: i64,
+    start_time: i64,
     name: []const u8,
 
     pub fn start(name: []const u8) Timer {
         return .{
-            .start = std.time.milliTimestamp(),
+            .start_time = std.time.milliTimestamp(),
             .name = name,
         };
     }
 
     pub fn stop(self: Timer) void {
         const end = std.time.milliTimestamp();
-        const elapsed = end - self.start;
+        const elapsed = end - self.start_time;
         info("{s} took {d}ms", .{ self.name, elapsed });
     }
 };
