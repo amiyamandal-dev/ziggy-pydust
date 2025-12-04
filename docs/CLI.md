@@ -18,6 +18,9 @@ After installation, the `pydust` command will be available in your terminal.
 | `pydust init` | Initialize pydust in an existing directory |
 | `pydust develop` | Build and install in development mode |
 | `pydust build-wheel` | Build distribution wheels |
+| `pydust add` | Add a C/C++ library dependency |
+| `pydust list` | List all C/C++ dependencies |
+| `pydust remove` | Remove a C/C++ dependency |
 | `pydust build` | Build extension modules directly |
 | `pydust watch` | Watch for changes and rebuild automatically |
 | `pydust debug` | Compile Zig file with debug symbols |
@@ -208,6 +211,123 @@ pydust build-wheel --platform linux-x86_64
 # Build macOS ARM64 wheels from Windows
 pydust build-wheel --platform macos-arm64
 ```
+
+---
+
+## `pydust add`
+
+Add a C/C++ library dependency to your project. Automatically clones the library, generates Zig bindings, and integrates it into your build system.
+
+### Usage
+
+```bash
+pydust add <source> [OPTIONS]
+```
+
+### Arguments
+
+- `<source>` - GitHub URL, Git URL, or local filesystem path
+
+### Options
+
+- `-n, --name <NAME>` - Override dependency name (defaults to repo/directory name)
+- `--headers <HEADERS...>` - Specify main headers to expose (auto-detected if not provided)
+- `-v, --verbose` - Enable verbose output
+
+### Examples
+
+```bash
+# Add from GitHub
+pydust add https://github.com/d99kris/rapidcsv
+
+# Add with custom name
+pydust add https://github.com/nlohmann/json --name json
+
+# Add local library
+pydust add /usr/local/include/sqlite3.h --name sqlite
+
+# Specify headers
+pydust add https://github.com/nothings/stb \
+  --headers stb_image.h stb_image_write.h
+```
+
+### What It Does
+
+1. **Clones** the library to `deps/<name>/`
+2. **Discovers** headers and source files
+3. **Generates** Zig bindings in `bindings/<name>.zig`
+4. **Creates** build configuration in `bindings/deps.zig.inc`
+5. **Generates** Python wrapper template in `src/<name>_wrapper.zig`
+6. **Tracks** dependency metadata in `pydust_deps.json`
+
+### Generated Files
+
+```
+your-project/
+├── deps/
+│   └── rapidcsv/           # Cloned library
+├── bindings/
+│   ├── rapidcsv.zig        # Auto-generated Zig bindings
+│   └── deps.zig.inc        # Build configuration
+├── src/
+│   └── rapidcsv_wrapper.zig # Python wrapper template
+└── pydust_deps.json        # Dependency tracking
+```
+
+---
+
+## `pydust list`
+
+List all C/C++ dependencies in the project.
+
+### Usage
+
+```bash
+pydust list
+```
+
+### Example Output
+
+```
+Dependencies (2):
+
+  • rapidcsv
+    Version: v8.90
+    Source: https://github.com/d99kris/rapidcsv
+    Type: Header-only
+    Headers: rapidcsv.h
+
+  • json
+    Version: v3.11.3
+    Source: https://github.com/nlohmann/json
+    Type: Header-only
+    Headers: json.hpp
+```
+
+---
+
+## `pydust remove`
+
+Remove a C/C++ dependency from the project.
+
+### Usage
+
+```bash
+pydust remove <name>
+```
+
+### Arguments
+
+- `<name>` - Name of the dependency to remove
+
+### Example
+
+```bash
+# Remove rapidcsv
+pydust remove rapidcsv
+```
+
+This removes the dependency from tracking and deletes generated bindings. The cloned source in `deps/` and wrapper template are preserved for safety.
 
 ---
 

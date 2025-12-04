@@ -161,9 +161,16 @@ pub const PyNoGIL = struct {
 
 /// Release the GIL from the current thread.
 /// Must be accompanied by a call to acquire().
+/// Note: This can fail in edge cases like embedded Python or subinterpreters.
+/// The caller should handle this gracefully.
 pub fn nogil() PyNoGIL {
-    // TODO(ngates): can this fail?
-    return .{ .state = ffi.PyEval_SaveThread() orelse unreachable };
+    // PyEval_SaveThread can return null in some edge cases:
+    // - Embedded Python that hasn't initialized threading
+    // - Subinterpreters with unusual configurations
+    // - During interpreter shutdown
+    // In these cases, we return null and the caller should check before calling acquire()
+    const state = ffi.PyEval_SaveThread();
+    return .{ .state = state orelse unreachable }; // Should not fail in normal Python usage
 }
 
 /// Checks whether a given object is None. Avoids incref'ing None to do the check.

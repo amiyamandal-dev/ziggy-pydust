@@ -134,7 +134,7 @@ test "PyAsyncGenerator" {
         ffi.PyErr_Fetch(&ptype, &pvalue, &ptraceback);
         const stop_iteration_type = ffi.PyExc_StopAsyncIteration;
         if (ptype != null and ffi.PyErr_GivenExceptionMatches(ptype, stop_iteration_type) != 0) {
-            py.PyError.PyRaised.clear();
+            // Error already cleared by PyErr_Fetch
             unreachable; // Should not stop here
         }
         ffi.PyErr_Restore(ptype, pvalue, ptraceback);
@@ -152,7 +152,7 @@ test "PyAsyncGenerator" {
         ffi.PyErr_Fetch(&ptype, &pvalue, &ptraceback);
         const stop_iteration_type = ffi.PyExc_StopAsyncIteration;
         if (ptype != null and ffi.PyErr_GivenExceptionMatches(ptype, stop_iteration_type) != 0) {
-            py.PyError.PyRaised.clear();
+            // Error already cleared by PyErr_Fetch
             unreachable; // Should not stop here
         }
         ffi.PyErr_Restore(ptype, pvalue, ptraceback);
@@ -170,7 +170,7 @@ test "PyAsyncGenerator" {
         ffi.PyErr_Fetch(&ptype, &pvalue, &ptraceback);
         const stop_iteration_type = ffi.PyExc_StopAsyncIteration;
         if (ptype != null and ffi.PyErr_GivenExceptionMatches(ptype, stop_iteration_type) != 0) {
-            py.PyError.PyRaised.clear();
+            // Error already cleared by PyErr_Fetch
         } else {
            ffi.PyErr_Restore(ptype, pvalue, ptraceback);
            return err;

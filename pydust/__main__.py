@@ -16,7 +16,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from pydust import buildzig, config, develop, init, watch
+from pydust import buildzig, config, deps, develop, init, watch
 from pydust import wheel as wheel_module
 
 parser = argparse.ArgumentParser()
@@ -186,6 +186,47 @@ build_wheel_sp.add_argument(
     help="verbose output",
 )
 
+# Dependency management commands
+add_sp = sub.add_parser(
+    "add",
+    help="Add a C/C++ library dependency to the project",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
+add_sp.add_argument(
+    "source",
+    help="GitHub URL, Git URL, or local path to the C/C++ library",
+)
+add_sp.add_argument(
+    "-n",
+    "--name",
+    help="override dependency name (defaults to repo name)",
+)
+add_sp.add_argument(
+    "--headers",
+    nargs="+",
+    help="main headers to expose (auto-detected if not specified)",
+)
+add_sp.add_argument(
+    "-v",
+    "--verbose",
+    action="store_true",
+    help="verbose output",
+)
+
+list_deps_sp = sub.add_parser(
+    "list",
+    help="List all C/C++ dependencies in the project",
+)
+
+remove_sp = sub.add_parser(
+    "remove",
+    help="Remove a C/C++ dependency from the project",
+)
+remove_sp.add_argument(
+    "name",
+    help="name of the dependency to remove",
+)
+
 
 def main():
     args = parser.parse_args()
@@ -210,6 +251,15 @@ def main():
 
     elif args.command == "build-wheel":
         build_wheel(args)
+
+    elif args.command == "add":
+        add_dependency(args)
+
+    elif args.command == "list":
+        list_deps(args)
+
+    elif args.command == "remove":
+        remove_dependency(args)
 
 
 def _parse_exts(exts: list[str], limited_api: bool = True, prefix: str = "") -> list[config.ExtModule]:
@@ -325,6 +375,26 @@ def build_wheel(args):
             verbose=args.verbose,
         )
         print(f"\n✓ Wheel built: {wheel_path}")
+
+
+def add_dependency(args):
+    """Add a C/C++ dependency to the project."""
+    deps.add_dependency(
+        source=args.source,
+        name=args.name,
+        headers=args.headers,
+        verbose=args.verbose,
+    )
+
+
+def list_deps(args):
+    """List all dependencies in the project."""
+    deps.list_dependencies()
+
+
+def remove_dependency(args):
+    """Remove a dependency from the project."""
+    deps.remove_dependency(args.name)
 
 
 if __name__ == "__main__":

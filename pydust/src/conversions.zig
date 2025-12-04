@@ -41,12 +41,17 @@ pub inline fn as(comptime root: type, comptime T: type, obj: anytype) py.PyError
 }
 
 /// Python -> Pydust. Perform an unchecked cast from a PyObject to a given PyDust class type.
+/// WARNING: This function performs NO runtime type validation and can lead to memory corruption
+/// if obj is not actually an instance of T. Use py.as() for checked conversions in most cases.
+/// This should only be used in performance-critical paths where type is guaranteed by caller.
 pub inline fn unchecked(comptime root: type, comptime T: type, obj: py.PyObject) T {
     const Definition = @typeInfo(T).pointer.child;
     const definition = State.getDefinition(root, Definition);
     if (definition.type != .class) {
         @compileError("Can only perform unchecked cast into a PyDust class type. Found " ++ @typeName(Definition));
     }
+    // Note: This is intentionally unchecked for performance. The caller MUST guarantee correct type.
+    // Consider using py.as() for type-checked conversions.
     const instance: *pytypes.PyTypeStruct(Definition) = @ptrCast(@alignCast(obj.py));
     return &instance.state;
 }

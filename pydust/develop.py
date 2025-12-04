@@ -22,6 +22,10 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from pydust.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 def develop_install(
     optimize: str = "Debug",
@@ -39,12 +43,25 @@ def develop_install(
         verbose: Enable verbose output
         extras: Optional list of extras to install
     """
+    logger.info(f"Starting development installation (optimize={optimize})")
+
     project_root = Path.cwd()
     pyproject_path = project_root / "pyproject.toml"
 
+    # Validate project structure
     if not pyproject_path.exists():
+        logger.error("pyproject.toml not found in current directory")
         print("❌ Error: pyproject.toml not found in current directory!")
         print("   Make sure you're in a Pydust project directory.")
+        sys.exit(1)
+
+    # Validate pyproject.toml is readable
+    try:
+        pyproject_path.stat()
+        logger.debug(f"Found pyproject.toml at {pyproject_path}")
+    except (OSError, PermissionError) as e:
+        logger.error(f"Cannot access pyproject.toml: {e}")
+        print(f"❌ Error: Cannot access pyproject.toml: {e}")
         sys.exit(1)
 
     print(f"Building and installing in development mode (optimize={optimize})...")
@@ -55,6 +72,7 @@ def develop_install(
         # Import here to avoid circular imports
         from pydust import buildzig, config
 
+        logger.debug("Loading pydust configuration")
         conf = config.load()
 
         # Use environment variable to set optimization level
@@ -63,13 +81,37 @@ def develop_install(
         env = os.environ.copy()
         env["PYDUST_OPTIMIZE"] = optimize
 
+        logger.debug(f"Running zig build with optimize={optimize}")
         buildzig.zig_build(
             argv=["install", f"-Dpython-exe={sys.executable}", f"-Doptimize={optimize}"],
             conf=conf,
             env=env,
         )
         print("  ✓ Extension modules built successfully")
+        logger.info("Zig extension modules built successfully")
+    except ImportError as e:
+        logger.error(f"Failed to import pydust modules: {e}")
+        print(f"  ❌ Failed to import pydust modules: {e}")
+        print("     Make sure pydust is installed correctly.")
+        sys.exit(1)
+    except subprocess.TimeoutExpired as e:
+        logger.error("Build timeout expired")
+        print(f"  ❌ Build timed out after {e.timeout} seconds")
+        print("     The build process took too long. Check for infinite loops or hanging processes.")
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Build failed with exit code {e.returncode}")
+        print(f"  ❌ Build failed with exit code {e.returncode}")
+        if verbose and e.stderr:
+            print(f"     {e.stderr}")
+        sys.exit(1)
+    except (OSError, PermissionError) as e:
+        logger.error(f"Build failed due to OS error: {e}")
+        print(f"  ❌ Build failed: {e}")
+        print("     Check file permissions and disk space.")
+        sys.exit(1)
     except Exception as e:
+        logger.error(f"Unexpected build error: {e}")
         print(f"  ❌ Failed to build extension modules: {e}")
         if verbose:
             import traceback
@@ -84,23 +126,42 @@ def develop_install(
     if extras:
         extras_str = ",".join(extras)
         pip_cmd[-1] = f".[{extras_str}]"
+        logger.debug(f"Installing with extras: {extras_str}")
 
     if verbose:
         pip_cmd.append("-v")
 
     try:
+        logger.debug(f"Running: {' '.join(pip_cmd)}")
         result = subprocess.run(
             pip_cmd,
             cwd=project_root,
             check=True,
             capture_output=not verbose,
             text=True,
+            timeout=600,  # 10 minute timeout for pip install
         )
         print("  ✓ Package installed in editable mode")
+        logger.info("Package installed in editable mode")
+    except subprocess.TimeoutExpired:
+        logger.error("Pip install timed out after 10 minutes")
+        print("  ❌ Pip install timed out after 10 minutes")
+        print("     The installation took too long. Check network connectivity or dependencies.")
+        sys.exit(1)
     except subprocess.CalledProcessError as e:
-        print(f"  ❌ Failed to install package: {e}")
+        logger.error(f"Pip install failed with exit code {e.returncode}")
+        print(f"  ❌ Failed to install package (exit code {e.returncode})")
         if not verbose and e.stderr:
             print(f"     {e.stderr}")
+        sys.exit(1)
+    except FileNotFoundError:
+        logger.error("Python executable not found")
+        print("  ❌ Error: Python executable not found")
+        print(f"     Could not run: {sys.executable}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error during pip install: {e}")
+        print(f"  ❌ Unexpected error during pip install: {e}")
         sys.exit(1)
 
     # Step 3: Verify installation
@@ -108,22 +169,37 @@ def develop_install(
     try:
         import tomllib
 
+        logger.debug("Reading pyproject.toml for verification")
         with open(pyproject_path, "rb") as f:
             pyproject = tomllib.load(f)
 
         package_name = pyproject["tool"]["poetry"]["name"]
+        logger.debug(f"Package name from pyproject.toml: {package_name}")
 
         # Try to import the package
         try:
             __import__(package_name.replace("-", "_"))
             print(f"  ✓ Package '{package_name}' is importable")
+            logger.info(f"Verified package {package_name} is importable")
         except ImportError as e:
+            logger.warning(f"Package not importable: {e}")
             print(f"  ⚠️  Warning: Could not import '{package_name}': {e}")
             print("     The package is installed but may have import issues.")
 
+    except tomllib.TOMLDecodeError as e:
+        logger.error(f"Invalid TOML in pyproject.toml: {e}")
+        print(f"  ⚠️  Warning: Invalid TOML in pyproject.toml: {e}")
+    except KeyError as e:
+        logger.error(f"Missing key in pyproject.toml: {e}")
+        print(f"  ⚠️  Warning: Could not find package name in pyproject.toml: {e}")
+    except (OSError, PermissionError) as e:
+        logger.error(f"Cannot read pyproject.toml: {e}")
+        print(f"  ⚠️  Warning: Could not read pyproject.toml: {e}")
     except Exception as e:
+        logger.warning(f"Verification failed: {e}")
         print(f"  ⚠️  Warning: Could not verify installation: {e}")
 
+    logger.info("Development installation complete")
     print("\n✅ Development installation complete!\n")
     print("You can now:")
     print("  - Import your package in Python")
@@ -139,12 +215,25 @@ def develop_build_only(optimize: str = "Debug", verbose: bool = False) -> None:
         optimize: Optimization level
         verbose: Enable verbose output
     """
+    logger.info(f"Starting build-only mode (optimize={optimize})")
+
     project_root = Path.cwd()
     pyproject_path = project_root / "pyproject.toml"
 
+    # Validate project structure
     if not pyproject_path.exists():
+        logger.error("pyproject.toml not found in current directory")
         print("❌ Error: pyproject.toml not found in current directory!")
         print("   Make sure you're in a Pydust project directory.")
+        sys.exit(1)
+
+    # Validate pyproject.toml is readable
+    try:
+        pyproject_path.stat()
+        logger.debug(f"Found pyproject.toml at {pyproject_path}")
+    except (OSError, PermissionError) as e:
+        logger.error(f"Cannot access pyproject.toml: {e}")
+        print(f"❌ Error: Cannot access pyproject.toml: {e}")
         sys.exit(1)
 
     print(f"Building Zig extension modules (optimize={optimize})...")
@@ -152,6 +241,7 @@ def develop_build_only(optimize: str = "Debug", verbose: bool = False) -> None:
     try:
         from pydust import buildzig, config
 
+        logger.debug("Loading pydust configuration")
         conf = config.load()
 
         import os
@@ -159,13 +249,37 @@ def develop_build_only(optimize: str = "Debug", verbose: bool = False) -> None:
         env = os.environ.copy()
         env["PYDUST_OPTIMIZE"] = optimize
 
+        logger.debug(f"Running zig build with optimize={optimize}")
         buildzig.zig_build(
             argv=["install", f"-Dpython-exe={sys.executable}", f"-Doptimize={optimize}"],
             conf=conf,
             env=env,
         )
         print("✅ Extension modules built successfully!")
+        logger.info("Build-only mode completed successfully")
+    except ImportError as e:
+        logger.error(f"Failed to import pydust modules: {e}")
+        print(f"❌ Failed to import pydust modules: {e}")
+        print("   Make sure pydust is installed correctly.")
+        sys.exit(1)
+    except subprocess.TimeoutExpired as e:
+        logger.error("Build timeout expired")
+        print(f"❌ Build timed out after {e.timeout} seconds")
+        print("   The build process took too long. Check for infinite loops or hanging processes.")
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Build failed with exit code {e.returncode}")
+        print(f"❌ Build failed with exit code {e.returncode}")
+        if verbose and e.stderr:
+            print(f"   {e.stderr}")
+        sys.exit(1)
+    except (OSError, PermissionError) as e:
+        logger.error(f"Build failed due to OS error: {e}")
+        print(f"❌ Build failed: {e}")
+        print("   Check file permissions and disk space.")
+        sys.exit(1)
     except Exception as e:
+        logger.error(f"Unexpected build error: {e}")
         print(f"❌ Failed to build extension modules: {e}")
         if verbose:
             import traceback

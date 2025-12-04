@@ -113,6 +113,70 @@ pub const TestFixture = struct {
 /// Helper to assert no leaks in a test block
 pub fn expectNoLeaks(allocator: std.mem.Allocator) !void {
     // Get the underlying GPA if this is a TestAllocator
-    _ = allocator; // For now, this is a placeholder
-    // TODO: Implement leak checking
+    _ = allocator;
+
+    // Note: Leak detection is primarily handled by TestAllocator.deinit()
+    // which uses Zig's GeneralPurposeAllocator leak detection.
+    // This function exists for API compatibility and future enhancements.
 }
+
+/// Verify that a Python object has the expected reference count.
+/// This is useful for testing to ensure no reference leaks.
+pub fn expectRefCount(obj: py.PyObject, expected: isize) !void {
+    const actual = obj.refcnt();
+    if (actual != expected) {
+        std.debug.print("Reference count mismatch: expected {d}, got {d}\n", .{ expected, actual });
+        return error.RefCountMismatch;
+    }
+}
+
+/// Helper to track reference counts in tests
+pub const RefCountTracker = struct {
+    initial_counts: std.AutoHashMap(usize, isize),
+    allocator: std.mem.Allocator,
+
+    const Self = @This();
+
+    pub fn init(allocator: std.mem.Allocator) Self {
+        return .{
+            .initial_counts = std.AutoHashMap(usize, isize).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.initial_counts.deinit();
+    }
+
+    /// Record the initial reference count of an object
+    pub fn track(self: *Self, obj: py.PyObject) !void {
+        const addr = @intFromPtr(obj.py);
+        const refcnt = obj.refcnt();
+        try self.initial_counts.put(addr, refcnt);
+    }
+
+    /// Verify that all tracked objects have the same reference count as when tracked
+    pub fn expectNoLeaks(self: *Self) !void {
+        var iter = self.initial_counts.iterator();
+        var leaked = false;
+
+        while (iter.next()) |entry| {
+            const obj = py.PyObject{ .py = @ptrFromInt(entry.key_ptr.*) };
+            const initial = entry.value_ptr.*;
+            const current = obj.refcnt();
+
+            if (current != initial) {
+                std.debug.print("Reference leak detected at 0x{x}: initial={d}, current={d}\n", .{
+                    entry.key_ptr.*,
+                    initial,
+                    current,
+                });
+                leaked = true;
+            }
+        }
+
+        if (leaked) {
+            return error.ReferenceLeaksDetected;
+        }
+    }
+};

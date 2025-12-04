@@ -90,7 +90,7 @@ pub fn Trampoline(comptime root: type, comptime T: type) type {
                         return obj;
                     }
                 },
-                .optional => |o| return if (obj) |objP| Trampoline(o.child).asObject(objP) else std.debug.panic("Can't convert null to an object", .{}),
+                .optional => |o| return if (obj) |objP| Trampoline(root, o.child).asObject(objP) else @compileError("Cannot convert optional null to an object. Use error unions or handle null explicitly."),
                 inline else => {},
             }
             @compileError("Cannot convert into PyObject: " ++ @typeName(T));
@@ -206,7 +206,7 @@ pub fn Trampoline(comptime root: type, comptime T: type) type {
             }
 
             // Otherwise we can unwrap the object.
-            var obj = object orelse @panic("Unexpected null");
+            var obj = object orelse return PyError.PyRaised;
 
             switch (@typeInfo(T)) {
                 .bool => return (try py.PyBool.from.checked(root, obj)).asbool(),

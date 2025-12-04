@@ -268,9 +268,17 @@ pub fn wrap(comptime root: type, comptime definition: type, comptime func: anyty
             pyargs: [*]ffi.PyObject,
             nargs: ffi.Py_ssize_t,
         ) callconv(.c) ?*ffi.PyObject {
+            // Verify alignment before casting to prevent undefined behavior
+            const pyargs_addr = @intFromPtr(pyargs);
+            if (pyargs_addr % @alignOf(py.PyObject) != 0) {
+                // Misaligned pointer - this shouldn't happen with CPython but let's be safe
+                std.debug.print("Error: Misaligned pyargs pointer: 0x{x}\n", .{pyargs_addr});
+                return null;
+            }
+
             const resultObject = internal(
                 .{ .py = pyself },
-                @as([*]py.PyObject, @ptrCast(pyargs))[0..@intCast(nargs)],
+                @as([*]py.PyObject, @ptrCast(@alignCast(pyargs)))[0..@intCast(nargs)],
             ) catch return null;
             return resultObject.py;
         }
@@ -294,10 +302,27 @@ pub fn wrap(comptime root: type, comptime definition: type, comptime func: anyty
             nargs: ffi.Py_ssize_t,
             kwnames: ?*ffi.PyObject,
         ) callconv(.c) ?*ffi.PyObject {
-            const allArgs: [*]py.PyObject = @ptrCast(pyargs);
-            const args = allArgs[0..@intCast(nargs)];
+            // Verify alignment before casting
+            const pyargs_addr = @intFromPtr(pyargs);
+            if (pyargs_addr % @alignOf(py.PyObject) != 0) {
+                std.debug.print("Error: Misaligned pyargs pointer in fastcallKwargs: 0x{x}\n", .{pyargs_addr});
+                return null;
+            }
+
+            const allArgs: [*]py.PyObject = @ptrCast(@alignCast(pyargs));
+            const nargs_usize = @as(usize, @intCast(nargs));
+            const args = allArgs[0..nargs_usize];
 
             const nkwargs = if (kwnames) |names| py.len(root, names) catch return null else 0;
+
+            // Bounds check: ensure we don't read past the available arguments
+            // Note: We can't fully validate the buffer size here as CPython doesn't provide it,
+            // but we can at least check for reasonable bounds to catch obvious errors
+            if (nkwargs > 1000) { // Sanity check - more than 1000 kwargs is suspicious
+                std.debug.print("Error: Suspiciously large nkwargs: {}\n", .{nkwargs});
+                return null;
+            }
+
             const kwargs = allArgs[args.len .. args.len + nkwargs];
 
             // Construct a StringHashMap of keyword arguments.
@@ -341,6 +366,8 @@ pub fn wrap(comptime root: type, comptime definition: type, comptime func: anyty
 /// Unwrap the args and kwargs into the requested args struct.
 pub fn unwrapArgs(comptime root: type, comptime Args: type, pyargs: py.Args(), pykwargs: py.Kwargs()) !Args {
     var kwargs = pykwargs;
+    // Note: args is undefined here, but all fields must be initialized in the loop below
+    // This is safe because we initialize all required fields or return an error
     var args: Args = undefined;
 
     const s = @typeInfo(Args).@"struct";

@@ -100,9 +100,33 @@ pydust build-wheel --all-platforms
 
 - **`pydust new <name>`** - Create a new project with boilerplate
 - **`pydust init`** - Initialize pydust in an existing directory
+- **`pydust add <url>`** - Add C/C++ library dependencies with auto-generated bindings
 - **`pydust develop`** - Build and install in development mode (like `pip install -e .`)
 - **`pydust build-wheel`** - Build distribution wheels
 - **`pydust watch`** - Watch for changes and rebuild automatically
+
+### C/C++ Dependency Management
+
+Easily integrate C/C++ libraries into your Pydust extensions:
+
+```bash
+# Add a C/C++ library (auto-generates Zig bindings)
+pydust add https://github.com/d99kris/rapidcsv
+
+# List dependencies
+pydust list
+
+# Use in your Zig code
+const rapidcsv = @import("../bindings/rapidcsv.zig");
+```
+
+Pydust automatically:
+- Clones the library
+- Generates Zig bindings using `@cImport`
+- Creates build configuration
+- Tracks versions and metadata
+
+See [Dependency Management Guide](docs/DEPENDENCY_MANAGEMENT.md) for details.
 
 ### Using the Template
 

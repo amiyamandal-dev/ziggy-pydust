@@ -83,14 +83,35 @@ pub const PydustStep = struct {
         const libpython = getLibpython(
             b.allocator,
             python_exe,
-        ) catch @panic("Cannot find libpython");
+        ) catch |err| {
+            std.debug.print("\n❌ Failed to locate Python library (libpython)\n", .{});
+            std.debug.print("   Error: {}\n", .{err});
+            std.debug.print("\n   Possible solutions:\n", .{});
+            std.debug.print("   - Ensure Python development headers are installed:\n", .{});
+            std.debug.print("     • Ubuntu/Debian: sudo apt install python3-dev\n", .{});
+            std.debug.print("     • Fedora/RHEL:   sudo dnf install python3-devel\n", .{});
+            std.debug.print("     • macOS:         brew install python@3.11\n", .{});
+            std.debug.print("   - Verify Python executable: {s}\n", .{python_exe});
+            std.debug.print("   - Try specifying Python explicitly: zig build -Dpython-exe=/path/to/python\n", .{});
+            std.process.exit(1);
+        };
         const hexversion = getPythonOutput(
             b.allocator,
             python_exe,
             "import sys; print(f'{sys.hexversion:#010x}', end='')",
-        ) catch @panic("Cannot get python hexversion");
+        ) catch |err| {
+            std.debug.print("\n❌ Failed to get Python version information\n", .{});
+            std.debug.print("   Error: {}\n", .{err});
+            std.debug.print("   Python executable: {s}\n", .{python_exe});
+            std.debug.print("   Ensure Python is working correctly: {s} --version\n", .{python_exe});
+            std.process.exit(1);
+        };
 
-        var self = b.allocator.create(PydustStep) catch @panic("OOM");
+        var self = b.allocator.create(PydustStep) catch |err| {
+            std.debug.print("\n❌ Out of memory creating PydustStep\n", .{});
+            std.debug.print("   Error: {}\n", .{err});
+            std.process.exit(1);
+        };
 
         self.* = .{
             .owner = b,
@@ -109,13 +130,30 @@ pub const PydustStep = struct {
         // Eagerly run path discovery to work around ZLS support.
         self.python_include_dir = self.pythonOutput(
             "import os, sysconfig; print(os.path.relpath(sysconfig.get_path('include')), end='')",
-        ) catch @panic("Failed to setup Python");
+        ) catch |err| {
+            std.debug.print("\n❌ Failed to get Python include directory\n", .{});
+            std.debug.print("   Error: {}\n", .{err});
+            std.debug.print("   Python executable: {s}\n", .{python_exe});
+            std.debug.print("   This usually means Python's sysconfig module is not working correctly.\n", .{});
+            std.process.exit(1);
+        };
         self.python_library_dir = self.pythonOutput(
             "import os, sysconfig; print(os.path.relpath(sysconfig.get_config_var('LIBDIR')), end='')",
-        ) catch @panic("Failed to setup Python");
+        ) catch |err| {
+            std.debug.print("\n❌ Failed to get Python library directory\n", .{});
+            std.debug.print("   Error: {}\n", .{err});
+            std.debug.print("   Python executable: {s}\n", .{python_exe});
+            std.process.exit(1);
+        };
         self.pydust_source_file = self.pythonOutput(
             "import pydust; import os; print(os.path.relpath(os.path.join(os.path.dirname(pydust.__file__), 'src/pydust.zig')), end='')",
-        ) catch @panic("Failed to setup Python");
+        ) catch |err| {
+            std.debug.print("\n❌ Failed to locate pydust source files\n", .{});
+            std.debug.print("   Error: {}\n", .{err});
+            std.debug.print("   Ensure pydust package is installed: pip install pydust\n", .{});
+            std.debug.print("   Or install in development mode: pip install -e .\n", .{});
+            std.process.exit(1);
+        };
 
         // Option for emitting test binary based on the given root source. This can be helpful for debugging.
         const debugRoot = b.option(
@@ -199,12 +237,20 @@ pub const PydustStep = struct {
             lib.getEmittedBin(),
             // TODO(ngates): find this somehow?
             .{ .custom = ".." }, // Relative to project root: zig-out/../
-            libraryDestRelPath(self.allocator, options) catch @panic("OOM"),
+            libraryDestRelPath(self.allocator, options) catch |err| {
+                std.debug.print("\n❌ Out of memory computing library destination path\n", .{});
+                std.debug.print("   Error: {}\n", .{err});
+                std.process.exit(1);
+            },
         );
         b.getInstallStep().dependOn(&install.step);
 
         // Invoke stub generator on the emitted binary
-        const workingDir = std.fs.cwd().realpathAlloc(self.allocator, ".") catch @panic("OOM");
+        const workingDir = std.fs.cwd().realpathAlloc(self.allocator, ".") catch |err| {
+            std.debug.print("\n❌ Failed to get current working directory\n", .{});
+            std.debug.print("   Error: {}\n", .{err});
+            std.process.exit(1);
+        };
         const genArgs: []const []const u8 = if (self.check_stubs)
             &.{ self.python_exe, "-m", "pydust.generate_stubs", options.name, workingDir, "--check" }
         else
@@ -241,7 +287,11 @@ pub const PydustStep = struct {
         // Install the test binary
         const install_libtest = b.addInstallBinFile(
             libtest.getEmittedBin(),
-            testDestRelPath(self.allocator, short_name) catch @panic("OOM"),
+            testDestRelPath(self.allocator, short_name) catch |err| {
+                std.debug.print("\n❌ Out of memory computing test destination path\n", .{});
+                std.debug.print("   Error: {}\n", .{err});
+                std.process.exit(1);
+            },
         );
         self.test_build_step.dependOn(&install_libtest.step);
 
@@ -261,7 +311,10 @@ pub const PydustStep = struct {
         const name = options.name;
 
         if (!options.limited_api) {
-            @panic("Pydust currently only supports limited API");
+            std.debug.print("\n❌ Pydust currently only supports limited API (PEP 384)\n", .{});
+            std.debug.print("   Please set 'limited_api: true' in PythonModuleOptions\n", .{});
+            std.debug.print("   Module: {s}\n", .{name});
+            std.process.exit(1);
         }
 
         const suffix = ".abi3.so";
