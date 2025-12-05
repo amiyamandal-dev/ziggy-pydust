@@ -41,8 +41,12 @@ pub fn PyDict(comptime root: type) type {
         /// If the dictionary has extra fields not present in the struct, no error is raised.
         pub fn as(self: Self, comptime T: type) !T {
             const s = @typeInfo(T).@"struct";
-            // Note: result is undefined here, but all fields must be initialized in the loop below
-            // This is safe because we initialize all fields or return an error
+            // Note: result is undefined here, but the loop below MUST initialize all fields
+            // We cannot use std.mem.zeroes() because T may contain non-nullable pointers
+            // All paths through the loop must either:
+            // 1. Initialize the field from the dictionary value
+            // 2. Initialize the field with its default value
+            // 3. Return an error if a required field is missing
             var result: T = undefined;
             inline for (s.fields) |field| {
                 const value = try self.getItem(field.type, field.name ++ "");

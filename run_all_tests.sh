@@ -433,6 +433,8 @@ run_tests_individually() {
         "test/test_new_features.py"
         "test/test_debugging.py"
         "test/test_new_types.py"
+        "test/test_new_container_types.py"
+        "test/test_init_deploy.py"
     )
 
     local passed=0

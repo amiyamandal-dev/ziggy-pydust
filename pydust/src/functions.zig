@@ -366,8 +366,12 @@ pub fn wrap(comptime root: type, comptime definition: type, comptime func: anyty
 /// Unwrap the args and kwargs into the requested args struct.
 pub fn unwrapArgs(comptime root: type, comptime Args: type, pyargs: py.Args(), pykwargs: py.Kwargs()) !Args {
     var kwargs = pykwargs;
-    // Note: args is undefined here, but all fields must be initialized in the loop below
-    // This is safe because we initialize all required fields or return an error
+    // Note: args is undefined here, but the loop below MUST initialize all required fields
+    // We cannot use std.mem.zeroes() because Args may contain non-nullable pointers
+    // All paths through the loop must either:
+    // 1. Initialize the field with a value from pyargs/pykwargs
+    // 2. Initialize the field with its default value
+    // 3. Return an error if a required field is missing
     var args: Args = undefined;
 
     const s = @typeInfo(Args).@"struct";

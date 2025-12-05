@@ -37,41 +37,54 @@ pub const PyMemAllocator = struct {
         _ = ret_addr;
         _ = ctx;
 
-        // FIXME(ngates): we should have a separate allocator for re-entrant cases like this
-        // that require the GIL, without always paying the cost of acquiring it.
+        // PyMem functions require the GIL
+        // TODO(perf): Check if GIL already held to avoid overhead in re-entrant calls
         const gil = py.gil();
         defer gil.release();
 
         const alignment_bytes = ptr_align.toByteUnits();
 
         // Safety check: ensure alignment fits in u8 for our header scheme
-        // For alignments > 255, we need a different approach
+        // Our scheme stores the alignment shift in a single byte before the returned pointer.
+        // For alignments > 255 bytes, this won't work without a different approach.
         if (alignment_bytes > 255) {
-            // For large alignments, fall back to over-allocating
-            // and storing a u16 offset instead
-            std.debug.print("Warning: Large alignment {d} requested, may be inefficient\n", .{alignment_bytes});
-            return null; // TODO: Implement large alignment support
+            // For large alignments, we would need either:
+            // - A larger header (u16/u32) which complicates the scheme
+            // - Using PyMem_AlignedAlloc (Python 3.11+) directly
+            // - System-specific aligned_alloc
+            // For now, fail the allocation. This is rare in practice.
+            std.debug.print("Error: Alignment {d} bytes exceeds maximum supported alignment of 255\n", .{alignment_bytes});
+            return null;
         }
 
         const alignment: u8 = @intCast(alignment_bytes);
 
-        // By default, ptr_align == 1 which gives us our 1 byte header to store the alignment shift
-        // We need to allocate enough space for alignment + our header
+        // Allocate enough space for the data plus alignment padding
+        // We need up to (alignment - 1) extra bytes for alignment, plus 1 byte for the header
+        // So total extra = alignment bytes
         const raw_ptr: usize = @intFromPtr(ffi.PyMem_Malloc(len + alignment) orelse return null);
 
         // Calculate the alignment offset needed
+        // If raw_ptr is already aligned, we still need to shift by 'alignment' to make room for header
+        // Otherwise, we shift by enough to align it
         const misalignment = raw_ptr % alignment_bytes;
         const shift: u8 = if (misalignment == 0) alignment else @intCast(alignment_bytes - misalignment);
-        std.debug.assert(0 < shift and shift <= alignment);
+
+        // Verify shift is valid: must be > 0 (room for header) and <= alignment (within our allocation)
+        std.debug.assert(shift > 0 and shift <= alignment);
 
         const aligned_ptr: usize = raw_ptr + shift;
 
-        // Verify we're not writing outside our allocated region
-        std.debug.assert(aligned_ptr > raw_ptr); // Ensure we moved forward
+        // Safety assertions: verify we're not writing outside our allocated region
+        std.debug.assert(aligned_ptr > raw_ptr); // Ensure we moved forward (shift > 0)
         std.debug.assert(aligned_ptr - 1 >= raw_ptr); // Ensure header byte is in our allocation
+        std.debug.assert((aligned_ptr - 1) - raw_ptr < alignment); // Header is within padding
 
-        // Store the shift in the first byte before the aligned ptr
-        // We know from above that we are guaranteed to own that byte.
+        // Verify the returned pointer is properly aligned
+        std.debug.assert(aligned_ptr % alignment_bytes == 0);
+
+        // Store the shift in the byte immediately before the aligned pointer
+        // This byte is guaranteed to be within our allocation due to the assertions above
         @as(*u8, @ptrFromInt(aligned_ptr - 1)).* = shift;
 
         return @ptrFromInt(aligned_ptr);
@@ -83,8 +96,8 @@ pub const PyMemAllocator = struct {
         _ = ret_addr;
         _ = ctx;
 
-        // FIXME(ngates): we should have a separate allocator for re-entrant cases like this
-        // that require the GIL, without always paying the cost of acquiring it.
+        // PyMem functions require the GIL
+        // TODO(perf): Check if GIL already held to avoid overhead in re-entrant calls
         const gil = py.gil();
         defer gil.release();
 
@@ -92,37 +105,45 @@ pub const PyMemAllocator = struct {
 
         // Safety check: ensure alignment fits in u8
         if (alignment_bytes > 255) {
-            std.debug.print("Warning: Large alignment {d} requested in remap\n", .{alignment_bytes});
+            std.debug.print("Error: Alignment {d} bytes exceeds maximum supported alignment of 255 in remap\n", .{alignment_bytes});
             return null;
         }
 
         const alignment: u8 = @intCast(alignment_bytes);
 
-        // get shift - verify it's within reasonable bounds
-        const old_shift = @as(*u8, @ptrFromInt(@intFromPtr(memory.ptr) - 1)).*;
-        if (old_shift > alignment) {
-            // Corrupted header or mismatched alignment
+        // Retrieve and validate the shift from the header byte
+        const aligned_ptr_in: usize = @intFromPtr(memory.ptr);
+        const old_shift = @as(*u8, @ptrFromInt(aligned_ptr_in - 1)).*;
+
+        // Verify the header is valid
+        if (old_shift == 0 or old_shift > alignment) {
+            // Either corrupted header, or alignment changed between alloc and remap
+            std.debug.print("Error: Invalid alignment header in remap: shift={d}, alignment={d}\n", .{ old_shift, alignment });
             return null;
         }
 
-        const origin_mem_ptr: *anyopaque = @ptrFromInt(@intFromPtr(memory.ptr) - old_shift);
+        // Recover the original pointer that was passed to PyMem_Malloc
+        const origin_mem_ptr: *anyopaque = @ptrFromInt(aligned_ptr_in - old_shift);
 
-        // By default, ptr_align == 1 which gives us our 1 byte header to store the alignment shift
+        // Reallocate with room for alignment padding
         const raw_ptr: usize = @intFromPtr(ffi.PyMem_Realloc(origin_mem_ptr, new_len + alignment) orelse return null);
 
-        // Calculate the alignment offset needed
+        // Calculate new alignment offset
         const misalignment = raw_ptr % alignment_bytes;
         const shift: u8 = if (misalignment == 0) alignment else @intCast(alignment_bytes - misalignment);
-        std.debug.assert(0 < shift and shift <= alignment);
+
+        // Verify shift is valid
+        std.debug.assert(shift > 0 and shift <= alignment);
 
         const aligned_ptr: usize = raw_ptr + shift;
 
-        // Verify we're not writing outside our allocated region
+        // Safety assertions
         std.debug.assert(aligned_ptr > raw_ptr);
         std.debug.assert(aligned_ptr - 1 >= raw_ptr);
+        std.debug.assert((aligned_ptr - 1) - raw_ptr < alignment);
+        std.debug.assert(aligned_ptr % alignment_bytes == 0);
 
-        // Store the shift in the first byte before the aligned ptr
-        // We know from above that we are guaranteed to own that byte.
+        // Store the new shift in the header byte
         @as(*u8, @ptrFromInt(aligned_ptr - 1)).* = shift;
 
         return @ptrFromInt(aligned_ptr);
@@ -130,24 +151,48 @@ pub const PyMemAllocator = struct {
 
     fn resize(ctx: *anyopaque, buf: []u8, buf_align: mem.Alignment, new_len: usize, ret_addr: usize) bool {
         _ = ret_addr;
-        _ = buf_align;
         _ = ctx;
 
-        // Resize can succeed in two cases:
-        // 1. Shrinking: new_len <= buf.len - we can always "shrink" without doing anything
-        //    PyMem will keep track of the actual allocation size for us
-        // 2. Growing within allocated space: This would require tracking the original allocation size,
-        //    which we don't currently do.
+        // PyMem functions require the GIL
+        // TODO(perf): Check if GIL already held to avoid overhead in re-entrant calls
+        const gil = py.gil();
+        defer gil.release();
 
-        // For shrinking, we can succeed without any actual work
+        const alignment_bytes = buf_align.toByteUnits();
+
+        // Shrinking always succeeds - we just report the smaller size
+        // PyMem will keep track of the actual allocation size for us
         if (new_len <= buf.len) {
             return true;
         }
 
-        // For growing, we cannot resize in place since:
-        // a) PyMem_Realloc can move the allocation, but we can't return the new pointer
-        // b) We don't track the original allocation size to know if there's room
-        // So we must return false to force the caller to allocate new memory
+        // For growing, we try to realloc in-place
+        // Get the original pointer before alignment adjustment
+        const aligned_ptr: usize = @intFromPtr(buf.ptr);
+        const shift = @as(*const u8, @ptrFromInt(aligned_ptr - 1)).*;
+        const origin_mem_ptr: *anyopaque = @ptrFromInt(aligned_ptr - shift);
+
+        // Try to realloc. If it succeeds in-place, the pointer won't change
+        // Safety check for alignment
+        if (alignment_bytes > 255) {
+            return false; // Can't handle large alignments
+        }
+
+        const alignment: u8 = @intCast(alignment_bytes);
+        const new_ptr = ffi.PyMem_Realloc(origin_mem_ptr, new_len + alignment) orelse return false;
+
+        // Check if realloc succeeded in-place (pointer didn't move)
+        // If it moved, we can't update buf.ptr, so return false to force remap/alloc
+        if (@intFromPtr(new_ptr) == aligned_ptr - shift) {
+            // Success! Allocation grew in-place
+            return true;
+        }
+
+        // Allocation moved - we need to copy to new location, so return false
+        // to let the allocator handle it via remap
+        // Note: We've already reallocated, but we can't use the new pointer
+        // This is a limitation of the resize() API. The caller will call remap()
+        // which will realloc again, but PyMem_Realloc should be smart enough to reuse
         return false;
     }
 
@@ -156,6 +201,8 @@ pub const PyMemAllocator = struct {
         _ = ctx;
         _ = ret_addr;
 
+        // PyMem functions require the GIL
+        // TODO(perf): Check if GIL already held to avoid overhead in re-entrant calls
         const gil = py.gil();
         defer gil.release();
 

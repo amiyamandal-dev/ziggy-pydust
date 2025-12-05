@@ -40,18 +40,62 @@ pub inline fn as(comptime root: type, comptime T: type, obj: anytype) py.PyError
     return tramp.Trampoline(root, T).unwrap(object(root, obj));
 }
 
+/// Python -> Pydust. Perform a type-checked cast from a PyObject to a given PyDust class type.
+/// This performs runtime type validation using isinstance() and returns an error if types don't match.
+/// Use this by default for safety. Only use unchecked() in proven performance-critical paths.
+pub inline fn checked(comptime root: type, comptime T: type, obj: py.PyObject) py.PyError!T {
+    const Definition = @typeInfo(T).pointer.child;
+    const definition = State.getDefinition(root, Definition);
+    if (definition.type != .class) {
+        @compileError("Can only perform checked cast into a PyDust class type. Found " ++ @typeName(Definition));
+    }
+
+    // Get the expected type for validation
+    const Cls = try py.self(root, Definition);
+    defer Cls.obj.decref();
+
+    // Perform runtime type check
+    if (!try py.isinstance(root, obj, Cls)) {
+        const clsName = State.getIdentifier(root, Definition).name();
+        const mod = State.getContaining(root, Definition, .module);
+        const modName = State.getIdentifier(root, mod).name();
+        return py.TypeError(root).raiseFmt(
+            "Expected {s}.{s} but found {s}",
+            .{ modName, clsName, try obj.getTypeName() },
+        );
+    }
+
+    const instance: *pytypes.PyTypeStruct(Definition) = @ptrCast(@alignCast(obj.py));
+    return &instance.state;
+}
+
 /// Python -> Pydust. Perform an unchecked cast from a PyObject to a given PyDust class type.
-/// WARNING: This function performs NO runtime type validation and can lead to memory corruption
-/// if obj is not actually an instance of T. Use py.as() for checked conversions in most cases.
-/// This should only be used in performance-critical paths where type is guaranteed by caller.
+///
+/// ⚠️ DANGER: This function performs NO runtime type validation and can lead to:
+///   - Memory corruption
+///   - Segmentation faults
+///   - Arbitrary code execution if attacker controls type
+///
+/// The caller MUST guarantee obj is actually an instance of T. If you cannot prove this
+/// statically, use checked() instead.
+///
+/// Only use this in:
+///   1. Performance-critical inner loops where isinstance() is measurably too slow
+///   2. After you've already validated the type externally
+///   3. Internal functions where type is guaranteed by construction
+///
+/// Example safe usage:
+///   // After explicit check
+///   if (try py.isinstance(root, obj, MyClass)) {
+///       const instance = py.unchecked(root, *MyClass, obj); // Safe here
+///   }
 pub inline fn unchecked(comptime root: type, comptime T: type, obj: py.PyObject) T {
     const Definition = @typeInfo(T).pointer.child;
     const definition = State.getDefinition(root, Definition);
     if (definition.type != .class) {
         @compileError("Can only perform unchecked cast into a PyDust class type. Found " ++ @typeName(Definition));
     }
-    // Note: This is intentionally unchecked for performance. The caller MUST guarantee correct type.
-    // Consider using py.as() for type-checked conversions.
+    // SAFETY: Caller guarantees obj is instance of T
     const instance: *pytypes.PyTypeStruct(Definition) = @ptrCast(@alignCast(obj.py));
     return &instance.state;
 }

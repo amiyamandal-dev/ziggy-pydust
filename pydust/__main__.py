@@ -16,8 +16,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from pydust import buildzig, config, deps, develop, init, watch
+from pydust import buildzig, config, deps, deploy, develop, init, watch
 from pydust import wheel as wheel_module
+from pydust.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 parser = argparse.ArgumentParser()
 sub = parser.add_subparsers(dest="command", required=True)
@@ -96,10 +99,17 @@ init_sp.add_argument(
     help="author name (defaults to git config)",
 )
 init_sp.add_argument(
-    "-f",
-    "--force",
+    "--description",
+    help="project description",
+)
+init_sp.add_argument(
+    "--email",
+    help="author email",
+)
+init_sp.add_argument(
+    "--no-interactive",
     action="store_true",
-    help="overwrite existing files",
+    help="non-interactive mode",
 )
 
 new_sp = sub.add_parser(
@@ -227,6 +237,58 @@ remove_sp.add_argument(
     help="name of the dependency to remove",
 )
 
+# Deploy command
+deploy_sp = sub.add_parser(
+    "deploy",
+    help="Upload built wheels to PyPI or another repository",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
+deploy_sp.add_argument(
+    "--dist-dir",
+    default="dist",
+    help="directory containing built wheels",
+)
+deploy_sp.add_argument(
+    "--repository",
+    help="repository URL (defaults to PyPI)",
+)
+deploy_sp.add_argument(
+    "--username",
+    help="repository username (use __token__ for PyPI tokens)",
+)
+deploy_sp.add_argument(
+    "--password",
+    help="repository password or API token",
+)
+deploy_sp.add_argument(
+    "--no-skip-existing",
+    action="store_true",
+    help="don't skip files that already exist",
+)
+deploy_sp.add_argument(
+    "-v",
+    "--verbose",
+    action="store_true",
+    help="verbose output",
+)
+
+# Check command
+check_sp = sub.add_parser(
+    "check",
+    help="Check built wheels for common errors",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
+check_sp.add_argument(
+    "--dist-dir",
+    default="dist",
+    help="directory containing built wheels",
+)
+check_sp.add_argument(
+    "--strict",
+    action="store_true",
+    help="enable strict checking",
+)
+
 
 def main():
     args = parser.parse_args()
@@ -260,6 +322,12 @@ def main():
 
     elif args.command == "remove":
         remove_dependency(args)
+
+    elif args.command == "deploy":
+        deploy_packages(args)
+
+    elif args.command == "check":
+        check_packages(args)
 
 
 def _parse_exts(exts: list[str], limited_api: bool = True, prefix: str = "") -> list[config.ExtModule]:
@@ -322,11 +390,24 @@ def watch_mode(args):
 
 def init_project(args):
     """Initialize a new Pydust project in the current directory."""
-    init.init_project(
+    author_name = None
+    author_email = args.email if hasattr(args, "email") else None
+
+    if args.author and "<" in args.author:
+        parts = args.author.split("<")
+        author_name = parts[0].strip()
+        if len(parts) > 1 and not author_email:
+            author_email = parts[1].rstrip(">").strip()
+    elif args.author:
+        author_name = args.author
+
+    init.init_project_cookiecutter(
         path=Path.cwd(),
         package_name=args.name,
-        author=args.author,
-        force=args.force,
+        author_name=author_name,
+        author_email=author_email,
+        description=args.description if hasattr(args, "description") else None,
+        use_interactive=not args.no_interactive if hasattr(args, "no_interactive") else True,
     )
 
 
@@ -395,6 +476,27 @@ def list_deps(args):
 def remove_dependency(args):
     """Remove a dependency from the project."""
     deps.remove_dependency(args.name)
+
+
+def deploy_packages(args):
+    """Deploy/upload built wheels to PyPI."""
+    deploy.deploy_to_pypi(
+        dist_dir=args.dist_dir,
+        repository=args.repository,
+        username=args.username,
+        password=args.password,
+        skip_existing=not args.no_skip_existing,
+        verbose=args.verbose,
+    )
+
+
+def check_packages(args):
+    """Check built wheels for common errors."""
+    if not deploy.check_package(
+        dist_dir=args.dist_dir,
+        strict=args.strict,
+    ):
+        sys.exit(1)
 
 
 if __name__ == "__main__":
